@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-export CUDA_VISIBLE_DEVICES=5
+export CUDA_VISIBLE_DEVICES=7
 set -euo pipefail
 
-OUTPUT_DIR="/home/yx277/workspace-vq/LLMSim-CQ/output/llama-3.1-8b"
+OUTPUT_DIR="/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b"
 
 python export_kv_and_fisher.py \
   --model "meta-llama/Meta-Llama-3.1-8B" \

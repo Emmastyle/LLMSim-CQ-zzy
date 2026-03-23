@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+ #!/usr/bin/env python3
 """比较 CQ 和 FP 基线的评测结果"""
 
 import json
