@@ -11,9 +11,9 @@ python -m lm_eval.run_models --model hf \
     --model_args pretrained=meta-llama/Llama-3.1-8B,attn_implementation=eager \
     --tasks winogrande \
     --batch_size auto \
-    --device cuda:5 \
+    --device cuda:6 \
     --verbosity INFO \
-    --output_path results/llama-3.1-8b/fp_winogrande_optimized.json 2>&1 | tee fp_test_optimized_log.txt
+    --output_path result/llama-3.1-8b/baseline_winogrande_optimized.json 2>&1 | tee baseline_test_optimized_log.txt
 
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
