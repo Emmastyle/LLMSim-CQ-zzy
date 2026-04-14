@@ -45,7 +45,7 @@ Conceptually:
 
 This shifts quantization capacity toward what matters most for model behavior.
 
-### 3) End-to-end evaluation, not just reconstruction
+### 3) End-to-end evaluation
 
 The method is validated on:
 
