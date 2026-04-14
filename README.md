@@ -110,6 +110,23 @@ srun -p athena-genai -t 24:00:00 -w node5 --pty bash
 
 ---
 
+## Artifact Diagram
+
+```mermaid
+flowchart TD
+    A["Step 1: Export KV + Fisher<br/>`run_export_kv_and_fisher_llama-3.1-8b.sh`"] --> B["Artifacts A<br/>`output/llama-3.1-8b-2c4b/kv_cache/sample*_layer*_key.pt`<br/>`output/llama-3.1-8b-2c4b/kv_cache/sample*_layer*_value.pt`<br/>`output/llama-3.1-8b-2c4b/fisher_diag.pt`"]
+    B --> C["Step 2: Learn centroids<br/>`run_generate_centroids_llama-3.1-8b.sh`"]
+    C --> D["Artifacts B (Codebooks)<br/>`output/llama-3.1-8b-2c4b/centroids/k_centroids_fisher_layer{i}.npy`<br/>`output/llama-3.1-8b-2c4b/centroids/v_centroids_fisher_layer{i}.npy`"]
+    D --> E["Step 3: CQ evaluation<br/>`test_cq_llama-3.1-8b_optimized.sh`"]
+    D --> F["Step 3: FP baseline<br/>`test_baseline_winogrande_llama3.1-8b.sh`"]
+    D --> G["Step 4: RTN baseline<br/>`test_rtn_winogrande_llama3.1-8b.sh`"]
+    E --> H["Final outputs<br/>`results/llama-3.1-8b/*.json` + logs"]
+    F --> H
+    G --> H
+```
+
+---
+
 ## Quickstart (Fast Reproduction Path)
 
 If you want a minimal end-to-end CQ run (currently configured for `2c4b`):
