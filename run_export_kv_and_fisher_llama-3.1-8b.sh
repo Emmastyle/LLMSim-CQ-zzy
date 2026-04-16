@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-export CUDA_VISIBLE_DEVICES=4
+export CUDA_VISIBLE_DEVICES=7
 set -euo pipefail
 
 OUTPUT_DIR="/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-2c4b"
