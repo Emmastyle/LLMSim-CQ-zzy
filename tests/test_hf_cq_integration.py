@@ -3,6 +3,7 @@ import torch
 from types import SimpleNamespace
 
 from lm_eval.models.huggingface import HFLM
+from lm_eval.quantization import get_cq_backend_module
 
 
 class _DummyHFModel(torch.nn.Module):
@@ -34,3 +35,8 @@ def test_maybe_enable_cq(tmp_path):
 
     assert getattr(dummy_owner.model, "_cq_enabled", False)
     assert callable(dummy_owner._cq_disable_handle)
+
+
+def test_get_cq_backend_module_variants():
+    assert get_cq_backend_module("postrope").__name__.endswith("cq_cache")
+    assert get_cq_backend_module("prerope").__name__.endswith("cq_cache_PreRoPE")

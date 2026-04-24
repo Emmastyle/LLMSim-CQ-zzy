@@ -105,6 +105,7 @@ class HFLM(TemplateLM):
         chat_template_args: dict[str, Any] | None = None,
         cq_codebook_dir: str | None = None,
         cq_layer_prefix: str = "layer",
+        cq_rope_mode: str = "postrope",
         rtn_pertensor_bits: int | str | None = None,
         **kwargs,
     ) -> None:
@@ -236,7 +237,7 @@ class HFLM(TemplateLM):
             self.model.eval()
             self.model.tie_weights()
             self._maybe_enable_rtn(rtn_pertensor_bits)
-            self._maybe_enable_cq(cq_codebook_dir, cq_layer_prefix)
+            self._maybe_enable_cq(cq_codebook_dir, cq_layer_prefix, cq_rope_mode)
 
         self.think_end_token = (
             int(think_end_token)
@@ -427,7 +428,12 @@ class HFLM(TemplateLM):
 
         return args
 
-    def _maybe_enable_cq(self, cq_codebook_dir: str | None, layer_prefix: str) -> None:
+    def _maybe_enable_cq(
+        self,
+        cq_codebook_dir: str | None,
+        layer_prefix: str,
+        rope_mode: str = "postrope",
+    ) -> None:
         """Optionally enable CQ KV-cache support when a codebook directory is provided."""
 
         if not cq_codebook_dir:
@@ -440,11 +446,15 @@ class HFLM(TemplateLM):
             return
 
         try:
-            from lm_eval.quantization.cq_cache import CQQuantizationConfig, enable_cq_kv_cache
+            from lm_eval.quantization import get_cq_backend_module
         except ImportError as exc:  # pragma: no cover - import error paths are rare
             raise RuntimeError(
                 "CQ quantization requested, but lm_eval.quantization is unavailable in this environment."
             ) from exc
+
+        cq_backend = get_cq_backend_module(rope_mode)
+        CQQuantizationConfig = cq_backend.CQQuantizationConfig
+        enable_cq_kv_cache = cq_backend.enable_cq_kv_cache
 
         quant_config = CQQuantizationConfig(
             codebook_dir=str(cq_codebook_dir),
@@ -453,9 +463,10 @@ class HFLM(TemplateLM):
         )
         self._cq_disable_handle = enable_cq_kv_cache(self.model, quant_config)
         eval_logger.info(
-            "Enabled CQ KV-cache quantization using %s (prefix=%s)",
+            "Enabled CQ KV-cache quantization using %s (prefix=%s, rope_mode=%s)",
             cq_codebook_dir,
             layer_prefix,
+            rope_mode,
         )
 
     def _maybe_enable_rtn(self, rtn_pertensor_bits: int | str | None) -> None:

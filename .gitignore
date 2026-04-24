@@ -238,5 +238,8 @@ __marimo__/
 fisher_runs_output/
 fisher_weighted_codebook/
 output/
+output-PreRoPE/
 results_old/
 trash/
+tmp_codebook/
+failed_exp/
