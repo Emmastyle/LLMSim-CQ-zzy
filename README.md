@@ -2,290 +2,333 @@
 
 This project extends `lm-evaluation-harness` to reproduce and evaluate:
 
-- **CQ (Coupled Quantization) for KV-cache**
-- **RTN per-tensor baseline**
+- Coupled Quantization (CQ) for KV-cache
+- RTN per-tensor baseline
 - Main model target: `meta-llama/Llama-3.1-8B`
 
 ---
 
-## What This Project Is About
+## Overview
 
-Modern LLM inference is often bottlenecked not only by model weights, but by **KV-cache memory traffic** during autoregressive decoding.  
-This project studies a practical question:
+Modern LLM inference is often bottlenecked by KV-cache memory bandwidth.  
+This repository studies whether KV-cache can be compressed aggressively while preserving downstream task quality.
 
-> Can we compress KV-cache aggressively while preserving downstream accuracy and language modeling quality?
+The pipeline includes:
 
-To answer this, the repository builds a full reproduction pipeline around Coupled Quantization (CQ), including:
-
-- calibration data collection from real model activations
-- Fisher-aware codebook learning
-- runtime integration into `lm_eval` evaluation flows
-- side-by-side comparison against FP and RTN baselines
-
-In short, this project is an engineering-focused reproduction of **accuracy-aware KV-cache compression** for real evaluation workloads.
+1. Exporting KV activations and Fisher statistics
+2. Learning Fisher-weighted codebooks
+3. Running CQ/FP/RTN evaluations in `lm_eval`
 
 ---
 
-## Method Intuition (Why CQ Works)
+## Quick Start
 
-### 1) Coupled Quantization over channel groups
-
-Instead of quantizing each channel independently, CQ groups multiple channels together (for example `2c`, `4c`, `8c`) and quantizes the group as one unit.  
-This captures cross-channel structure in KV states and typically yields better fidelity under the same bit budget.
-
-### 2) Fisher-weighted distortion objective
-
-Not every channel contributes equally to loss.  
-This project uses Fisher diagonal statistics as sensitivity weights, so codebook learning minimizes a **task-relevant weighted error** rather than plain MSE.
-
-Conceptually:
-
-- high-Fisher dimensions are "expensive to distort"
-- low-Fisher dimensions can tolerate more quantization noise
-
-This shifts quantization capacity toward what matters most for model behavior.
-
-### 3) End-to-end evaluation
-
-The method is validated on:
-
-- downstream task metrics (for example Winogrande)
-- perplexity behavior under `use_cache=True`
-
-So results reflect actual inference-time quality, not only offline tensor reconstruction error.
-
----
-
-## Project Status
-
-- Baseline, RTN, and multiple CQ settings have been run successfully.
-- The only remaining unfinished run is **`2c4b` full experiment**.
-- Existing Winogrande outputs are under `results/llama-3.1-8b/` (for example `2c8b`, `4c8b`, `8c8b`).
-
----
-
-## Environment Setup (Conda `vq`)
-
-### 1) Enter the project directory
+Run a full Post-RoPE CQ pipeline (example: `4c8b`) from scratch:
 
 ```bash
 cd /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy
-```
 
-### 2) Create the `vq` environment (one-time)
-
-```bash
-conda create -n vq python=3.10 -y
-```
-
-### 3) Activate the environment
-
-```bash
-conda activate vq
-```
-
-### 4) Install dependencies for this project
-
-```bash
-pip install -U pip setuptools wheel
-pip install -e .
-pip install torch transformers datasets accelerate sentencepiece
-```
-
-What gets installed:
-
-- Core harness dependencies from `pyproject.toml` via `pip install -e .`
-- Runtime essentials used by your scripts:
-  - `torch`
-  - `transformers`
-  - `datasets`
-  - `accelerate`
-  - `sentencepiece`
-
-### 5) (Optional) Start an interactive Slurm session
-
-```bash
-srun -p athena-genai -t 24:00:00 -w node5 --pty bash
-```
-
----
-
-## Artifact Diagram
-
-```mermaid
-flowchart TD
-    A["Step 1: Export KV + Fisher<br/>`run_export_kv_and_fisher_llama-3.1-8b.sh`"] --> B["Artifacts A<br/>`output/llama-3.1-8b-2c4b/kv_cache/sample*_layer*_key.pt`<br/>`output/llama-3.1-8b-2c4b/kv_cache/sample*_layer*_value.pt`<br/>`output/llama-3.1-8b-2c4b/fisher_diag.pt`"]
-    B --> C["Step 2: Learn centroids<br/>`run_generate_centroids_llama-3.1-8b.sh`"]
-    C --> D["Artifacts B (Codebooks)<br/>`output/llama-3.1-8b-2c4b/centroids/k_centroids_fisher_layer{i}.npy`<br/>`output/llama-3.1-8b-2c4b/centroids/v_centroids_fisher_layer{i}.npy`"]
-    D --> E["Step 3: CQ evaluation<br/>`test_cq_llama-3.1-8b_optimized.sh`"]
-    D --> F["Step 3: FP baseline<br/>`test_baseline_winogrande_llama3.1-8b.sh`"]
-    D --> G["Step 4: RTN baseline<br/>`test_rtn_winogrande_llama3.1-8b.sh`"]
-    E --> H["Final outputs<br/>`results/llama-3.1-8b/*.json` + logs"]
-    F --> H
-    G --> H
-```
-
----
-
-## Quickstart (Fast Reproduction Path)
-
-If you want a minimal end-to-end CQ run (currently configured for `2c4b`):
-
-```bash
-# Step 1: export KV activations + Fisher diagonal
-bash run_export_kv_and_fisher_llama-3.1-8b.sh
-
-# Step 2: generate per-layer centroids
-bash run_generate_centroids_llama-3.1-8b.sh
-
-# Step 3: run CQ on Winogrande
-bash test_cq_llama-3.1-8b_optimized.sh
-
-# Step 4: run FP baseline for comparison
-bash test_baseline_winogrande_llama3.1-8b.sh
-```
-
----
-
-## Full Reproduction Steps
-
-Use this sequence: **data export -> centroid learning -> downstream evaluation**.
-
-> Scope note: all commands in this README refer to primary project files only (root and `scripts/`), and intentionally exclude any `trash/` directory content.
-
-### Step 0. Directory conventions
-
-- Export root (current script default):
-  - `output/llama-3.1-8b-2c4b/`
-- Centroid output:
-  - `output/llama-3.1-8b-2c4b/centroids/`
-- Evaluation outputs (both naming styles appear in scripts):
-  - `result/llama-3.1-8b/`
-  - `results/llama-3.1-8b/`
-
-### Step 1. Export KV activations and Fisher
-
-Run the helper script (currently set to `num_coupled_channels=2`, `num_bits=4`):
-
-```bash
-bash run_export_kv_and_fisher_llama-3.1-8b.sh
-```
-
-Equivalent core command:
-
-```bash
+# 1) Export KV activations + Fisher diagonal
 python export_kv_and_fisher.py \
-  --model "meta-llama/Meta-Llama-3.1-8B" \
-  --output_dir "/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-2c4b" \
+  --model meta-llama/Meta-Llama-3.1-8B \
+  --output_dir /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b \
   --num_samples 16 \
   --max_seq_len 2048 \
-  --key_export_domain post_rope \
-  --num_coupled_channels 2 \
-  --num_bits 4 \
-  --dataset "wikitext" \
-  --dataset_config "wikitext-2-raw-v1"
+  --dataset wikitext \
+  --dataset_config wikitext-2-raw-v1 \
+  --num_coupled_channels 4 \
+  --num_bits 8 \
+  --key_export_domain post_rope
+
+# 2) Train layer-wise codebooks
+for i in $(seq 0 31); do
+  python generate_centroids.py \
+    --data_path /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b \
+    --layer_idx $i \
+    --output_dir /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b/centroids
+done
+
+# 3) Evaluate Winogrande with CQ
+python -m lm_eval.run_models --model hf \
+  --model_args pretrained=meta-llama/Llama-3.1-8B,cq_codebook_dir=/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b/centroids,cq_rope_mode=postrope,attn_implementation=eager \
+  --tasks winogrande \
+  --batch_size auto \
+  --device cuda:7 \
+  --output_path results/llama-3.1-8b/cq_4c8b_winogrande_optimized.json
 ```
 
-Artifacts produced:
-
-- `output/.../kv_cache/sample*_layer*_key.pt`
-- `output/.../kv_cache/sample*_layer*_value.pt`
-- `output/.../fisher_diag.pt`
-
-### Step 2. Learn Fisher-weighted centroids per layer
-
-```bash
-bash run_generate_centroids_llama-3.1-8b.sh
-```
-
-This loops through layers `0..31` and calls `generate_centroids.py` for each layer.
-
-Artifacts produced:
-
-- `k_centroids_fisher_layer{i}.npy`
-- `v_centroids_fisher_layer{i}.npy`
-
-Saved at:
-
-- `output/llama-3.1-8b-2c4b/centroids/`
-
-### Step 3. Downstream evaluation (Winogrande)
-
-#### 3.1 CQ run
-
-```bash
-bash test_cq_llama-3.1-8b_optimized.sh
-```
-
-Key check:
-
-- CQ is enabled by passing `cq_codebook_dir` in `--model_args`.
-- Confirm logs contain `Enabled CQ KV-cache quantization`.
-
-#### 3.2 FP baseline run
+Quick baseline runs:
 
 ```bash
 bash test_baseline_winogrande_llama3.1-8b.sh
-```
-
-### Step 4. RTN baseline (optional)
-
-```bash
 bash test_rtn_winogrande_llama3.1-8b.sh
 ```
 
-This uses `rtn_pertensor_bits=4` in `--model_args`.
+---
 
-### Step 5. Optional perplexity comparison (CQ vs FP)
+## Dataset Sources
 
-1. Collect activations and Fisher diagonals (see `generate_all_fisher_codebooks_*.sh`).
-2. Train per-layer Fisher-weighted CQ codebooks with `run_weighted_kmeans.py` (already automated in the helper script).
-3. Enable the runtime patch and evaluate perplexity / downstream metrics with the new helper:
+This project uses datasets loaded through Hugging Face `datasets`:
+
+- **Calibration / Fisher collection**
+  - Dataset ID: `wikitext`
+  - Config: `wikitext-2-raw-v1`
+  - Accessed via `datasets.load_dataset(...)` in export scripts
+- **Downstream evaluation**
+  - Dataset ID: `winogrande`
+  - Config: `winogrande_xl`
+  - Accessed through `lm_eval` task `winogrande`
+
+Useful references:
+
+- [Hugging Face Datasets](https://huggingface.co/docs/datasets)
+- [WikiText dataset card](https://huggingface.co/datasets/wikitext)
+- [Winogrande dataset card](https://huggingface.co/datasets/winogrande)
+
+---
+
+## Environment Setup
+
+### Python and installation
+
+- Required Python: `>=3.9` (recommended `3.10` or `3.12`)
 
 ```bash
-# CQ
-python scripts/run_cq_eval.py \
-  --model meta-llama/Llama-3.1-8B \
-  --codebook-dir /path/to/centroids \
-  --dataset wikitext \
-  --dataset-config wikitext-2-raw-v1 \
-  --limit 1 \
-  --max-eval-tokens 131072
-
-# FP baseline (disable CQ)
-python scripts/run_cq_eval.py \
-  --model meta-llama/Llama-3.1-8B \
-  --codebook-dir /path/to/centroids \
-  --disable-cq \
-  --dataset wikitext \
-  --dataset-config wikitext-2-raw-v1 \
-  --limit 1 \
-  --max-eval-tokens 131072
+cd /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy
+conda create -n vq python=3.10 -y
+conda activate vq
+pip install -U pip setuptools wheel
+pip install -e .
+pip install sentencepiece
 ```
 
-Add `--disable-cq` to obtain the FP baseline for comparison. The script exercises the quantized KV-cache during loss computation by forcing `use_cache=True`, matching the coupled quantization paper setup.
+### Key dependencies from `pyproject.toml`
 
-## Sanity Checks Before Long Runs
+Main dependencies include:
 
-- Keep model IDs consistent (`Meta-Llama-3.1-8B` vs `Llama-3.1-8B` naming differences exist in scripts).
-- Make sure `CUDA_VISIBLE_DEVICES` and `--device` target an available GPU.
-- Ensure `cq_codebook_dir` contains complete 32-layer `k/v` centroid files.
-- For pre/post RoPE comparison:
+- `torch>=1.8`
+- `transformers>=4.1`
+- `datasets>=2.16.0,<4.0`
+- `accelerate>=0.26.0`
+- `evaluate>=0.4.0`
+- `peft>=0.2.0`
+- `scikit-learn>=0.24.1`
+- `sacrebleu>=1.5.0`
+- `pybind11>=2.6.2`
 
-```bash
-python -m lm_eval.run_models --model hf \
-	--model_args pretrained=meta-llama/Llama-3.1-8B-Instruct,attn_implementation=eager,cq_codebook_dir=/path/to/fisher_weighted_codebook/llama-3.1-8b/4c8b \
-	--tasks wikitext \
-	--device cuda:6 \
-	--limit 10
+### Pre-run checks
+
+- Ensure Hugging Face access permissions for Llama models
+- Ensure `CUDA_VISIBLE_DEVICES` and `--device` are consistent
+- Use separate output directories per experiment to avoid overwrite
+
+---
+
+## Architecture Overview
+
+### Core files
+
+- `export_kv_and_fisher.py`: export KV + Fisher (Post-RoPE flow)
+- `export_kv_and_fisher_PreRoPE.py`: export KV + Fisher (Pre-RoPE flow)
+- `generate_centroids.py`: Fisher-weighted K-means codebook learning
+- `lm_eval/models/huggingface.py`: parses `cq_codebook_dir`, `cq_rope_mode`, `rtn_pertensor_bits`
+- `lm_eval/quantization/cq_cache.py`: Post-RoPE CQ runtime cache
+- `lm_eval/quantization/cq_cache_PreRoPE.py`: Pre-RoPE CQ runtime cache
+- `RTN_pertensor_baseline.py`: RTN baseline quantization logic
+
+### Core directories
+
+- `results/llama-3.1-8b/`: baseline + RTN + Post-RoPE CQ results
+- `results-PreRoPE/llama-3.1-8b/`: Pre-RoPE CQ results
+- `output/`: Post-RoPE intermediate artifacts (ignored)
+- `output-PreRoPE/`: Pre-RoPE intermediate artifacts (ignored)
+
+### Dataflow
+
+```mermaid
+flowchart TD
+  A["Export stage<br/>export_kv_and_fisher*.py"] --> B["output*/kv_cache/*.pt<br/>output*/fisher_diag.pt"]
+  B --> C["Codebook stage<br/>generate_centroids.py"]
+  C --> D["output*/centroids/*.npy"]
+  D --> E["Evaluation stage<br/>lm_eval.run_models + cq_codebook_dir"]
+  E --> F["results/*.json or results-PreRoPE/*.json"]
 ```
 
 ---
 
-## Models Recorded in This Project
+## Pre-RoPE vs Post-RoPE
 
-1. `google/gemma-3-12b-it`
-2. `meta-llama/Llama-3.1-8B-Instruct`
-3. `Qwen/Qwen3-4B-Instruct-2507`
-4. `Qwen/Qwen3-4B-Thinking-2507`
-5. `openai/gpt-oss-20b`
+- **Post-RoPE**
+  - Export key domain: `key_export_domain=post_rope`
+  - Runtime mode: `cq_rope_mode=postrope`
+  - Backend: `lm_eval/quantization/cq_cache.py`
+
+- **Pre-RoPE**
+  - Export key domain: `key_export_domain=pre_rope`
+  - Runtime mode: `cq_rope_mode=prerope`
+  - Backend: `lm_eval/quantization/cq_cache_PreRoPE.py`
+
+---
+
+## Current Results (Winogrande)
+
+Metric: `acc,none`
+
+### Baselines
+
+| Method | Setting | Acc |
+|---|---|---|
+| FP baseline | no quantization | 0.738753 |
+| RTN baseline | `rtn_pertensor_bits=4` | 0.491713 |
+
+### CQ Post-RoPE (`cq_rope_mode=postrope`)
+
+| CQ Config | Acc | Delta vs FP |
+|---|---|---|
+| 2c4b | 0.677190 | -0.061563 |
+| 4c4b | 0.485399 | -0.253354 |
+| 2c8b | 0.731650 | -0.007103 |
+| 4c8b | 0.644830 | -0.093923 |
+| 8c8b | 0.521705 | -0.217048 |
+
+### CQ Pre-RoPE (`cq_rope_mode=prerope`)
+
+| CQ Config | Acc | Delta vs FP | Delta vs Post-RoPE |
+|---|---|---|---|
+| 2c4b | 0.710339 | -0.028414 | +0.033149 |
+| 4c4b | 0.550908 | -0.187845 | +0.065509 |
+| 2c8b | 0.732439 | -0.006314 | +0.000789 |
+| 4c8b | 0.700079 | -0.038674 | +0.055249 |
+| 8c8b | 0.557222 | -0.181531 | +0.035517 |
+
+### Recorded result files
+
+- `results/llama-3.1-8b/baseline/baseline_winogrande_optimized_2026-04-09T01-55-36.387529.json`
+- `results/llama-3.1-8b/baseline/rtn_pertensor_winogrande_2026-04-11T06-27-37.189420.json`
+- `results/llama-3.1-8b/cq_2c4b_winogrande_optimized_2026-04-23T11-35-08.364614.json`
+- `results/llama-3.1-8b/cq_4c4b_winogrande_optimized_2026-04-23T23-34-37.722714.json`
+- `results/llama-3.1-8b/cq_2c8b_winogrande_optimized_2026-04-28T08-18-55.394482.json`
+- `results/llama-3.1-8b/cq_4c8b_winogrande_optimized_2026-04-26T05-46-50.233213.json`
+- `results/llama-3.1-8b/cq_8c8b_winogrande_optimized_2026-04-28T08-31-29.181234.json`
+- `results-PreRoPE/llama-3.1-8b/cq_2c4b_winogrande_PreRoPE_optimized_2026-04-28T08-33-54.956851.json`
+- `results-PreRoPE/llama-3.1-8b/cq_4c4b_winogrande_PreRoPE_optimized_2026-04-28T04-57-24.728109.json`
+- `results-PreRoPE/llama-3.1-8b/cq_2c8b_winogrande_PreRoPE_optimized_2026-04-28T02-03-54.657510.json`
+- `results-PreRoPE/llama-3.1-8b/cq_4c8b_winogrande_PreRoPE_optimized_2026-04-23T11-47-07.678534.json`
+- `results-PreRoPE/llama-3.1-8b/cq_8c8b_winogrande_PreRoPE_optimized_2026-04-28T00-24-33.009171.json`
+
+---
+
+## Reproducible Implementation Steps
+
+Recommended order:
+
+1. Choose config (`2c/4c/8c`, `4b/8b`, pre/post RoPE)
+2. Export KV + Fisher
+3. Train all 32 layer codebooks
+4. Run CQ evaluation
+5. Run FP and RTN baselines
+6. Compare JSON outputs
+
+### Step 1: Export KV + Fisher (example `4c8b`)
+
+Post-RoPE:
+
+```bash
+python export_kv_and_fisher.py \
+  --model meta-llama/Meta-Llama-3.1-8B \
+  --output_dir /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b \
+  --num_samples 16 \
+  --max_seq_len 2048 \
+  --dataset wikitext \
+  --dataset_config wikitext-2-raw-v1 \
+  --num_coupled_channels 4 \
+  --num_bits 8 \
+  --key_export_domain post_rope
+```
+
+Pre-RoPE:
+
+```bash
+python export_kv_and_fisher_PreRoPE.py \
+  --model meta-llama/Meta-Llama-3.1-8B \
+  --output_dir /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output-PreRoPE/llama-3.1-8b-4c8b \
+  --num_samples 16 \
+  --max_seq_len 2048 \
+  --dataset wikitext \
+  --dataset_config wikitext-2-raw-v1 \
+  --num_coupled_channels 4 \
+  --num_bits 8 \
+  --key_export_domain pre_rope
+```
+
+### Step 2: Train 32-layer codebooks
+
+```bash
+for i in $(seq 0 31); do
+  python generate_centroids.py \
+    --data_path /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b \
+    --layer_idx $i \
+    --output_dir /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b/centroids
+done
+```
+
+### Step 3: Evaluate CQ on Winogrande
+
+Post-RoPE:
+
+```bash
+python -m lm_eval.run_models --model hf \
+  --model_args pretrained=meta-llama/Llama-3.1-8B,cq_codebook_dir=/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b/centroids,cq_rope_mode=postrope,attn_implementation=eager \
+  --tasks winogrande \
+  --batch_size auto \
+  --device cuda:7 \
+  --output_path results/llama-3.1-8b/cq_4c8b_winogrande_optimized.json
+```
+
+Pre-RoPE:
+
+```bash
+python -m lm_eval.run_models --model hf \
+  --model_args pretrained=meta-llama/Llama-3.1-8B,cq_codebook_dir=/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output-PreRoPE/llama-3.1-8b-4c8b/centroids,cq_rope_mode=prerope,attn_implementation=eager \
+  --tasks winogrande \
+  --batch_size auto \
+  --device cuda:7 \
+  --output_path results-PreRoPE/llama-3.1-8b/cq_4c8b_winogrande_PreRoPE_optimized.json
+```
+
+### Step 4: Run baselines
+
+```bash
+bash test_baseline_winogrande_llama3.1-8b.sh
+bash test_rtn_winogrande_llama3.1-8b.sh
+```
+
+### Reproducibility checklist
+
+- Logs include `Enabled CQ KV-cache quantization`
+- `centroids/` contains complete 32-layer `k/v` files
+- Output JSON `model_args` has correct `cq_codebook_dir` and `cq_rope_mode`
+- Each experiment uses an isolated output directory
+
+---
+
+## Large Artifact Policy
+
+`output/` and `output-PreRoPE/` are intentionally not pushed because they contain very large artifacts:
+
+- `kv_cache/sample*_layer*_key.pt`
+- `kv_cache/sample*_layer*_value.pt`
+- `centroids/k_centroids_fisher_layer*.npy`
+- `centroids/v_centroids_fisher_layer*.npy`
+
+These are ignored in `.gitignore` and should be stored locally or in external storage.
+
+---
+
+## Implementation TODO
+
+- [ ] Add one unified sweep script for `(2c,4c,8c) x (4b,8b) x (pre/post_rope)`
+- [ ] Unify output naming (`result/` vs `results/`)
+- [ ] Add automatic result table generation from JSON files
+- [ ] Add environment lock file for stronger reproducibility
+- [ ] Add minimal CI smoke test for CQ integration
