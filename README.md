@@ -82,8 +82,8 @@ This project uses datasets loaded through Hugging Face `datasets`:
 Useful references:
 
 - [Hugging Face Datasets](https://huggingface.co/docs/datasets)
-- [WikiText dataset card](https://huggingface.co/datasets/wikitext)
-- [Winogrande dataset card](https://huggingface.co/datasets/winogrande)
+- [WikiText dataset card](https://huggingface.co/datasets/Salesforce/wikitext)
+- [Winogrande dataset card](https://huggingface.co/datasets/allenai/winogrande)
 
 ---
 
