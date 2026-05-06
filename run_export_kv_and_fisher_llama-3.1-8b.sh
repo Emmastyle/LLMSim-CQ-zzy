@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-export CUDA_VISIBLE_DEVICES=4
+export CUDA_VISIBLE_DEVICES=7
 set -euo pipefail
 
-OUTPUT_DIR="/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output-PreRoPE/llama-3.1-8b-4c8b"
+OUTPUT_DIR="/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output-demo/llama-3.1-8b-4c8b"
 
 python export_kv_and_fisher_PreRoPE.py \
   --model "meta-llama/Meta-Llama-3.1-8B" \

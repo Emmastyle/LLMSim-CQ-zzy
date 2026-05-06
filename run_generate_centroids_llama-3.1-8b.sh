@@ -5,7 +5,7 @@ export CUDA_VISIBLE_DEVICES=2
 set -euo pipefail
 
 # fisher_diag.pt 和 kv_cache/
-DATA_ROOT="/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output-PreRoPE/llama-3.1-8b-4c8b"
+DATA_ROOT="/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output-demo/llama-3.1-8b-4c8b"
 
 
 # 质心保存目录

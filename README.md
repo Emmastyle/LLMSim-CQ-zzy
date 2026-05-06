@@ -26,12 +26,12 @@ The pipeline includes:
 Run a full Post-RoPE CQ pipeline (example: `4c8b`) from scratch:
 
 ```bash
-cd /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy
+cd .
 
 # 1) Export KV activations + Fisher diagonal
 python export_kv_and_fisher.py \
   --model meta-llama/Meta-Llama-3.1-8B \
-  --output_dir /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b \
+  --output_dir ./output/llama-3.1-8b-4c8b \
   --num_samples 16 \
   --max_seq_len 2048 \
   --dataset wikitext \
@@ -43,14 +43,14 @@ python export_kv_and_fisher.py \
 # 2) Train layer-wise codebooks
 for i in $(seq 0 31); do
   python generate_centroids.py \
-    --data_path /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b \
+    --data_path ./output/llama-3.1-8b-4c8b \
     --layer_idx $i \
-    --output_dir /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b/centroids
+    --output_dir ./output/llama-3.1-8b-4c8b/centroids
 done
 
 # 3) Evaluate Winogrande with CQ
 python -m lm_eval.run_models --model hf \
-  --model_args pretrained=meta-llama/Llama-3.1-8B,cq_codebook_dir=/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b/centroids,cq_rope_mode=postrope,attn_implementation=eager \
+  --model_args pretrained=meta-llama/Llama-3.1-8B,cq_codebook_dir=./output/llama-3.1-8b-4c8b/centroids,cq_rope_mode=postrope,attn_implementation=eager \
   --tasks winogrande \
   --batch_size auto \
   --device cuda:7 \
@@ -94,7 +94,7 @@ Useful references:
 - Required Python: `>=3.9` (recommended `3.10` or `3.12`)
 
 ```bash
-cd /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy
+cd .
 conda create -n vq python=3.10 -y
 conda activate vq
 pip install -U pip setuptools wheel
@@ -236,7 +236,7 @@ Post-RoPE:
 ```bash
 python export_kv_and_fisher.py \
   --model meta-llama/Meta-Llama-3.1-8B \
-  --output_dir /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b \
+  --output_dir ./output/llama-3.1-8b-4c8b \
   --num_samples 16 \
   --max_seq_len 2048 \
   --dataset wikitext \
@@ -251,7 +251,7 @@ Pre-RoPE:
 ```bash
 python export_kv_and_fisher_PreRoPE.py \
   --model meta-llama/Meta-Llama-3.1-8B \
-  --output_dir /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output-PreRoPE/llama-3.1-8b-4c8b \
+  --output_dir ./output-PreRoPE/llama-3.1-8b-4c8b \
   --num_samples 16 \
   --max_seq_len 2048 \
   --dataset wikitext \
@@ -266,9 +266,9 @@ python export_kv_and_fisher_PreRoPE.py \
 ```bash
 for i in $(seq 0 31); do
   python generate_centroids.py \
-    --data_path /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b \
+    --data_path ./output/llama-3.1-8b-4c8b \
     --layer_idx $i \
-    --output_dir /home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b/centroids
+    --output_dir ./output/llama-3.1-8b-4c8b/centroids
 done
 ```
 
@@ -278,7 +278,7 @@ Post-RoPE:
 
 ```bash
 python -m lm_eval.run_models --model hf \
-  --model_args pretrained=meta-llama/Llama-3.1-8B,cq_codebook_dir=/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output/llama-3.1-8b-4c8b/centroids,cq_rope_mode=postrope,attn_implementation=eager \
+  --model_args pretrained=meta-llama/Llama-3.1-8B,cq_codebook_dir=./output/llama-3.1-8b-4c8b/centroids,cq_rope_mode=postrope,attn_implementation=eager \
   --tasks winogrande \
   --batch_size auto \
   --device cuda:7 \
@@ -289,7 +289,7 @@ Pre-RoPE:
 
 ```bash
 python -m lm_eval.run_models --model hf \
-  --model_args pretrained=meta-llama/Llama-3.1-8B,cq_codebook_dir=/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output-PreRoPE/llama-3.1-8b-4c8b/centroids,cq_rope_mode=prerope,attn_implementation=eager \
+  --model_args pretrained=meta-llama/Llama-3.1-8B,cq_codebook_dir=./output-PreRoPE/llama-3.1-8b-4c8b/centroids,cq_rope_mode=prerope,attn_implementation=eager \
   --tasks winogrande \
   --batch_size auto \
   --device cuda:7 \

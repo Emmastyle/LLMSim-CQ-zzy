@@ -9,12 +9,12 @@ echo "================================================"
 START_TIME=$(date +%s)
 
 python -m lm_eval.run_models --model hf \
-    --model_args pretrained=meta-llama/Llama-3.1-8B,cq_codebook_dir=/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output-PreRoPE/llama-3.1-8b-4c8b/centroids,cq_rope_mode=prerope,attn_implementation=eager \
+    --model_args pretrained=meta-llama/Llama-3.1-8B,cq_codebook_dir=/home/zz359/workspace-CQ-zzy/LLMSim-CQ-zzy/output-demo/llama-3.1-8b-4c8b/centroids,cq_rope_mode=prerope,attn_implementation=eager \
     --tasks winogrande \
     --batch_size auto \
     --device cuda:7 \
     --verbosity INFO \
-    --output_path results-PreRoPE/llama-3.1-8b/cq_4c8b_winogrande_PreRoPE_optimized.json 2>&1 | tee cq_test_PreRoPE_optimized_log.txt
+    --output_path results-demo/llama-3.1-8b/cq_4c8b_winogrande_PreRoPE_optimized.json 2>&1 | tee cq_test_PreRoPE_optimized_log.txt
 
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
